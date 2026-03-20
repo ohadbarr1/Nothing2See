@@ -2,9 +2,11 @@ import { useState } from "react";
 import type { Title } from "@nothing2see/types";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Star, Tv, Film, Calendar } from "lucide-react";
+import { Star, Tv, Film, Calendar, Bookmark, BookmarkCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/appStore";
+import { useAddToWatchlist, useRemoveFromWatchlist, useWatchlist } from "@nothing2see/core";
+import { ReportButton } from "@/components/ReportButton";
 
 interface TitleCardProps {
   title: Title;
@@ -38,7 +40,25 @@ const FALLBACK_POSTER = "https://via.placeholder.com/300x450/1e293b/94a3b8?text=
 
 export function TitleCard({ title, rank, className }: TitleCardProps) {
   const [imgError, setImgError] = useState(false);
-  const { region } = useAppStore();
+  const { region, user } = useAppStore();
+
+  // Watchlist state
+  const { data: watchlistData } = useWatchlist(!!user);
+  const addMutation = useAddToWatchlist();
+  const removeMutation = useRemoveFromWatchlist();
+
+  const watchlistItems =
+    watchlistData?.success ? watchlistData.data : [];
+  const isInWatchlist = watchlistItems.some((w) => w.title_id === title.tmdb_id);
+
+  function handleBookmark(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (isInWatchlist) {
+      removeMutation.mutate(title.tmdb_id);
+    } else {
+      addMutation.mutate(title.tmdb_id);
+    }
+  }
 
   const uniqueServices = Array.from(
     new Map(
@@ -61,6 +81,29 @@ export function TitleCard({ title, rank, className }: TitleCardProps) {
         <div className="absolute top-2 left-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white ring-1 ring-white/20">
           {rank}
         </div>
+      )}
+
+      {/* Watchlist bookmark — shown only when authenticated */}
+      {user && (
+        <button
+          type="button"
+          onClick={handleBookmark}
+          disabled={addMutation.isPending || removeMutation.isPending}
+          className={cn(
+            "absolute top-2 left-2 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 ring-1 ring-white/20 transition-colors",
+            rank !== undefined ? "left-10" : "left-2",
+            isInWatchlist
+              ? "text-primary"
+              : "text-white/70 hover:text-white"
+          )}
+          title={isInWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+        >
+          {isInWatchlist ? (
+            <BookmarkCheck className="h-4 w-4" />
+          ) : (
+            <Bookmark className="h-4 w-4" />
+          )}
+        </button>
       )}
 
       {/* Poster */}
@@ -164,6 +207,11 @@ export function TitleCard({ title, rank, className }: TitleCardProps) {
             )}
           </div>
         )}
+
+        {/* Report incorrect availability */}
+        <div className="pt-1">
+          <ReportButton tmdbId={title.tmdb_id} />
+        </div>
       </div>
     </div>
   );

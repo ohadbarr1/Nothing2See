@@ -3,7 +3,13 @@ import * as tmdbClient from "../clients/tmdb";
 import * as omdbClient from "../clients/omdb";
 import * as saClient from "../clients/streamingAvailability";
 import { cacheAside, TTL } from "../cache/redis";
+import { getDb } from "../db";
+import { availabilityTable, titlesTable } from "../db/schema";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import pino from "pino";
+
+const MIN_VOTES_NEW = 500;   // AC-3.4 — /discover/new minimum
+const THEATRICAL_WINDOW_DAYS = 30; // AC-3.5 — grace window for new theatrical releases
 
 const logger = pino({ name: "discoverService" });
 
@@ -13,6 +19,143 @@ export interface DiscoverOptions {
   type?: TitleType;
   genre?: string;
   min_rating?: number;
+}
+
+export interface DiscoverNewOptions {
+  region: string;
+  services: string[];
+  type?: TitleType;
+  genre?: string;
+}
+
+// ────────────────────────────────────────────────────────────
+// discoverNew — titles added in past 7 days ranked by IMDb
+// ────────────────────────────────────────────────────────────
+export async function discoverNew(options: DiscoverNewOptions): Promise<(Title & { is_new_release?: boolean })[]> {
+  const { region, services, type, genre } = options;
+  const cacheKey = `discover:new:${region}:${services.sort().join(",")}:${type ?? "all"}:${genre ?? ""}`;
+
+  return cacheAside(cacheKey, TTL.DISCOVER, async () => {
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - THEATRICAL_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const nowIso = now.toISOString();
+
+    let db;
+    try {
+      db = getDb();
+    } catch {
+      // DB not connected — return empty
+      logger.warn("DB not available for discoverNew");
+      return [];
+    }
+
+    // FIX-8: filter on first_seen_at (not last_updated) so re-synced rows don't resurface
+    // Fall back to last_updated for rows that pre-date the first_seen_at column (nullable)
+    const baseWhere = and(
+      eq(availabilityTable.region, region),
+      eq(availabilityTable.is_active, true),
+      gte(availabilityTable.first_seen_at, sevenDaysAgo),
+      services.length > 0
+        ? inArray(availabilityTable.service_id, services)
+        : undefined
+    );
+
+    const availRows = await db
+      .select({
+        title_tmdb_id: availabilityTable.title_tmdb_id,
+        service_id: availabilityTable.service_id,
+        link: availabilityTable.link,
+        availability_type: availabilityTable.availability_type,
+        quality: availabilityTable.quality,
+        first_seen_at: availabilityTable.first_seen_at,
+        last_updated: availabilityTable.last_updated,
+      })
+      .from(availabilityTable)
+      .where(baseWhere);
+
+    if (availRows.length === 0) {
+      return [];
+    }
+
+    // Deduplicate by tmdb_id
+    const tmdbIds = [...new Set(availRows.map((r) => r.title_tmdb_id))];
+
+    // Fetch title metadata from DB (FIX-1: select imdb_votes explicitly)
+    const titleRows = await db
+      .select()
+      .from(titlesTable)
+      .where(inArray(titlesTable.tmdb_id, tmdbIds));
+
+    const titleMap = new Map(titleRows.map((t) => [t.tmdb_id, t]));
+
+    const availByTmdb = new Map<number, typeof availRows>();
+    for (const row of availRows) {
+      const arr = availByTmdb.get(row.title_tmdb_id) ?? [];
+      arr.push(row);
+      availByTmdb.set(row.title_tmdb_id, arr);
+    }
+
+    let titles: (Title & { is_new_release?: boolean })[] = tmdbIds
+      .map((id) => {
+        const t = titleMap.get(id);
+        const avail = availByTmdb.get(id) ?? [];
+        if (!t) return null;
+        if (type && t.type !== type) return null;
+        if (genre && !t.genres.some((g) => g.toLowerCase() === genre.toLowerCase()))
+          return null;
+
+        // FIX-1: apply 500-vote minimum (AC-3.4)
+        // AC-3.5: titles below the threshold that had a theatrical release in the past 30 days
+        // are included but flagged with is_new_release: true
+        const votes = t.imdb_votes ?? 0;
+        const isTheatricalNewRelease =
+          votes < MIN_VOTES_NEW &&
+          t.first_seen_at !== null &&
+          new Date(t.first_seen_at) >= thirtyDaysAgo;
+
+        if (votes < MIN_VOTES_NEW && !isTheatricalNewRelease) {
+          return null;
+        }
+
+        return {
+          tmdb_id: t.tmdb_id,
+          imdb_id: t.imdb_id ?? null,
+          title: t.title,
+          original_title: t.original_title ?? null,
+          overview: t.overview ?? null,
+          poster_url: t.poster_url ?? null,
+          backdrop_url: t.backdrop_url ?? null,
+          type: t.type as TitleType,
+          year: t.year ?? null,
+          genres: t.genres,
+          imdb_rating: t.imdb_rating ?? null,
+          imdb_votes: t.imdb_votes ?? null, // FIX-1: real value from DB, not hardcoded null
+          rating_source: t.imdb_rating ? ("imdb" as const) : null,
+          tmdb_rating: t.tmdb_rating ?? null,
+          runtime: t.runtime ?? null,
+          availability: avail.map((a) => ({
+            service_id: a.service_id,
+            service_name: a.service_id,
+            region,
+            link: a.link ?? null,
+            type: a.availability_type as "subscription" | "rent" | "buy" | "free" | null,
+            quality: a.quality ?? null,
+            last_updated: a.last_updated.toISOString(),
+          })),
+          last_updated: nowIso,
+          ...(isTheatricalNewRelease ? { is_new_release: true } : {}),
+        };
+      })
+      .filter((t): t is Title & { is_new_release?: boolean } => t !== null);
+
+    // Sort by IMDb rating descending, take top 50
+    titles = titles
+      .sort((a, b) => (b.imdb_rating ?? 0) - (a.imdb_rating ?? 0))
+      .slice(0, 50);
+
+    return titles;
+  });
 }
 
 export async function discoverTop(

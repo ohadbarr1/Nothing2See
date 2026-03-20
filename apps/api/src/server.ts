@@ -3,10 +3,14 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import cookie from "@fastify/cookie";
 
 import { titlesRoutes } from "./routes/titles";
 import { discoverRoutes } from "./routes/discover";
 import { servicesRoutes } from "./routes/services";
+import { authRoutes } from "./routes/auth";
+import { usersRoutes } from "./routes/users";
+import { watchlistRoutes } from "./routes/watchlist";
 import { errorHandler } from "./middleware/errorHandler";
 
 const PORT = parseInt(process.env["PORT"] ?? "3001", 10);
@@ -19,7 +23,14 @@ const IS_DEV = process.env["NODE_ENV"] !== "production";
 // are all required. The server will exit with code 1 if any are absent.
 // ────────────────────────────────────────────────────────────
 function validateRequiredEnvVars() {
-  const required = ["TMDB_API_KEY", "OMDB_API_KEY", "RAPIDAPI_KEY"] as const;
+  const required = [
+    "TMDB_API_KEY",
+    "OMDB_API_KEY",
+    "RAPIDAPI_KEY",
+    "JWT_SECRET",
+    "JWT_REFRESH_SECRET",
+    "COOKIE_SECRET",
+  ] as const;
   const missing = required.filter((key) => !process.env[key]);
   if (missing.length > 0) {
     console.error(
@@ -45,7 +56,7 @@ async function buildServer() {
     origin: IS_DEV
       ? true
       : (process.env["ALLOWED_ORIGINS"] ?? "").split(",").filter(Boolean),
-    methods: ["GET", "OPTIONS"],
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
   });
 
@@ -54,6 +65,11 @@ async function buildServer() {
   await fastify.register(rateLimit, {
     max: 100,
     timeWindow: "1 minute",
+  });
+
+  await fastify.register(cookie, {
+    // COOKIE_SECRET is validated as required in validateRequiredEnvVars() — no hardcoded fallback
+    secret: process.env["COOKIE_SECRET"]!,
   });
 
   // Health check
@@ -72,6 +88,9 @@ async function buildServer() {
   await fastify.register(titlesRoutes, { prefix: "/api/v1/titles" });
   await fastify.register(discoverRoutes, { prefix: "/api/v1/discover" });
   await fastify.register(servicesRoutes, { prefix: "/api/v1/services" });
+  await fastify.register(authRoutes, { prefix: "/api/v1/auth" });
+  await fastify.register(usersRoutes, { prefix: "/api/v1/users" });
+  await fastify.register(watchlistRoutes, { prefix: "/api/v1/users" });
 
   // Error handler
   fastify.setErrorHandler(errorHandler);

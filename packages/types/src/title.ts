@@ -43,6 +43,7 @@ export const TitleSchema = z.object({
   availability: z.array(AvailabilitySchema).default([]),
   cross_region_hint: z.string().nullable().optional(),
   last_updated: z.string().datetime(),
+  is_new_release: z.boolean().optional(), // AC-3.5: theatrical release within 30 days, < 500 votes
 });
 
 export type Title = z.infer<typeof TitleSchema>;
