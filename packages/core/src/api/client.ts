@@ -71,6 +71,7 @@ function buildQuery(params: Record<string, unknown>): string {
 }
 
 export interface SearchQueryParams {
+  [key: string]: unknown;
   q: string;
   region?: string;
   type?: "movie" | "series";
@@ -79,6 +80,7 @@ export interface SearchQueryParams {
 }
 
 export interface DiscoverQueryParams {
+  [key: string]: unknown;
   region?: string;
   services?: string[];
   type?: "movie" | "series";
@@ -87,6 +89,7 @@ export interface DiscoverQueryParams {
 }
 
 export interface NewReleasesQueryParams {
+  [key: string]: unknown;
   region: string;
   services: string[];
   type?: "movie" | "series";
