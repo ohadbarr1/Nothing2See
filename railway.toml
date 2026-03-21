@@ -1,7 +1,0 @@
-[build]
-builder = "nixpacks"
-buildCommand = "pnpm --filter @nothing2see/types build && pnpm --filter @nothing2see/api build"
-
-[deploy]
-startCommand = "node apps/api/dist/server.js"
-restartPolicyType = "on_failure"

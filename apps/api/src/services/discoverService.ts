@@ -96,7 +96,7 @@ export async function discoverNew(options: DiscoverNewOptions): Promise<(Title &
       availByTmdb.set(row.title_tmdb_id, arr);
     }
 
-    let titles: (Title & { is_new_release?: boolean })[] = tmdbIds
+    const mapped: ((Title & { is_new_release?: boolean }) | null)[] = tmdbIds
       .map((id) => {
         const t = titleMap.get(id);
         const avail = availByTmdb.get(id) ?? [];
@@ -109,16 +109,17 @@ export async function discoverNew(options: DiscoverNewOptions): Promise<(Title &
         // AC-3.5: titles below the threshold that had a theatrical release in the past 30 days
         // are included but flagged with is_new_release: true
         const votes = t.imdb_votes ?? 0;
-        const isTheatricalNewRelease =
-          votes < MIN_VOTES_NEW &&
-          t.first_seen_at !== null &&
-          new Date(t.first_seen_at) >= thirtyDaysAgo;
+        // Check if any availability row was first seen in the theatrical window
+        const firstSeenInWindow = avail.some(
+          (a) => a.first_seen_at !== null && new Date(a.first_seen_at!) >= thirtyDaysAgo
+        );
+        const isTheatricalNewRelease = votes < MIN_VOTES_NEW && firstSeenInWindow;
 
         if (votes < MIN_VOTES_NEW && !isTheatricalNewRelease) {
           return null;
         }
 
-        return {
+        const item: Title & { is_new_release?: boolean } = {
           tmdb_id: t.tmdb_id,
           imdb_id: t.imdb_id ?? null,
           title: t.title,
@@ -144,10 +145,14 @@ export async function discoverNew(options: DiscoverNewOptions): Promise<(Title &
             last_updated: a.last_updated.toISOString(),
           })),
           last_updated: nowIso,
-          ...(isTheatricalNewRelease ? { is_new_release: true } : {}),
         };
-      })
-      .filter((t): t is Title & { is_new_release?: boolean } => t !== null);
+        if (isTheatricalNewRelease) item.is_new_release = true;
+        return item;
+      });
+
+    let titles: (Title & { is_new_release?: boolean })[] = mapped.filter(
+      (t): t is Title & { is_new_release?: boolean } => t !== null
+    );
 
     // Sort by IMDb rating descending, take top 50
     titles = titles

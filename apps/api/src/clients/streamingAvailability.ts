@@ -13,7 +13,7 @@ function apiKey(): string {
   return key;
 }
 
-function rapidapiHeaders(): HeadersInit {
+function rapidapiHeaders(): Record<string, string> {
   return {
     "x-rapidapi-host": "streaming-availability.p.rapidapi.com",
     "x-rapidapi-key": apiKey(),
