@@ -40,7 +40,8 @@ export interface SAStreamingOption {
 export interface SAShow {
   itemType: string;
   showType: "movie" | "series";
-  id: string; // tmdb id prefixed like "tmdb_movie_12345"
+  id: string; // internal SA id like "78"
+  tmdbId?: string; // e.g. "movie/603" or "tv/1396"
   imdbId?: string;
   title: string;
   overview?: string;
@@ -144,7 +145,7 @@ export async function getShowById(
   mediaType: "movie" | "series",
   region: string
 ): Promise<SANormalizedResult | null> {
-  const saId = mediaType === "movie" ? `tmdb_movie_${tmdbId}` : `tmdb_series_${tmdbId}`;
+  const saId = mediaType === "movie" ? `movie/${tmdbId}` : `tv/${tmdbId}`;
 
   const url = new URL(`${BASE_URL}/shows/${saId}`);
   url.searchParams.set("output_language", "en");
@@ -207,9 +208,15 @@ export async function getShowsByService(
 }
 
 function normalizeShow(show: SAShow, region: string): SANormalizedResult {
-  // Parse TMDB ID from the id field like "tmdb_movie_12345" or "tmdb_series_12345"
+  // Parse TMDB ID from the tmdbId field like "movie/603" or "tv/1396",
+  // falling back to the id field
   let tmdbId: number | null = null;
-  if (show.id) {
+  if (show.tmdbId) {
+    const match = show.tmdbId.match(/\d+$/);
+    if (match) {
+      tmdbId = parseInt(match[0], 10);
+    }
+  } else if (show.id) {
     const match = show.id.match(/\d+$/);
     if (match) {
       tmdbId = parseInt(match[0], 10);

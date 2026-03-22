@@ -16,24 +16,44 @@ interface TitleCardProps {
 
 const SERVICE_COLORS: Record<string, string> = {
   netflix: "bg-red-600 text-white",
+  prime: "bg-sky-500 text-white",
   "amazon-prime-video": "bg-sky-500 text-white",
+  disney: "bg-blue-700 text-white",
   "disney-plus": "bg-blue-700 text-white",
+  hbo: "bg-purple-700 text-white",
   "hbo-max": "bg-purple-700 text-white",
+  apple: "bg-gray-800 text-white border border-gray-600",
   "apple-tv-plus": "bg-gray-800 text-white border border-gray-600",
   hulu: "bg-green-500 text-white",
+  paramount: "bg-blue-500 text-white",
   "paramount-plus": "bg-blue-500 text-white",
   peacock: "bg-indigo-500 text-white",
+  mubi: "bg-red-800 text-white",
+  curiosity: "bg-yellow-600 text-white",
+  zee5: "bg-purple-600 text-white",
+  starz: "bg-gray-700 text-white",
+  showtime: "bg-red-700 text-white",
 };
 
 const SERVICE_SHORT: Record<string, string> = {
   netflix: "Netflix",
+  prime: "Prime",
   "amazon-prime-video": "Prime",
+  disney: "Disney+",
   "disney-plus": "Disney+",
+  hbo: "Max",
   "hbo-max": "Max",
+  apple: "Apple TV+",
   "apple-tv-plus": "Apple TV+",
   hulu: "Hulu",
+  paramount: "Paramount+",
   "paramount-plus": "Paramount+",
   peacock: "Peacock",
+  mubi: "MUBI",
+  curiosity: "Curiosity",
+  zee5: "ZEE5",
+  starz: "Starz",
+  showtime: "Showtime",
 };
 
 const FALLBACK_POSTER = "https://via.placeholder.com/300x450/1e293b/94a3b8?text=No+Poster";
